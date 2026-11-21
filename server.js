@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readFile } from 'node:fs/promises';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -10,6 +11,14 @@ const { Pool } = pg;
 const app = express();
 const port = process.env.PORT || 3000;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false } });
+const initDb = async () => {
+  const schema = await readFile(
+    new URL('./schema.sql', import.meta.url),
+    'utf8'
+  );
+  await pool.query(schema);
+  console.log('Base de datos TX LA FIRME preparada.');
+};
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!process.env.DATABASE_URL || !JWT_SECRET) console.warn('Faltan DATABASE_URL o JWT_SECRET en variables de entorno.');
 app.use(helmet());
@@ -84,4 +93,13 @@ app.post('/api/v1/admin/fares',auth,admin,asyncRoute(async(req,res)=>{const {rou
 app.post('/api/v1/admin/trips',auth,admin,asyncRoute(async(req,res)=>{const {routeId,departureAt,modality,totalSeats=4}=req.body;if(!['shared','exclusive'].includes(modality)||!departureAt)return res.status(400).json({error:'Fecha y modalidad obligatorias.'});const f=await pool.query('SELECT price FROM fares WHERE route_id=$1 AND modality=$2',[routeId,modality]);if(!f.rowCount)return res.status(400).json({error:'Primero configura la tarifa de esta ruta y modalidad.'});const q=await pool.query('INSERT INTO trips(route_id,departure_at,modality,total_seats,available_seats,price_per_seat,status) VALUES($1,$2,$3,$4,$4,$5,$6) RETURNING *',[routeId,departureAt,modality,totalSeats,f.rows[0].price,'open']);res.status(201).json({trip:q.rows[0]});}));
 
 app.use((err,req,res,next)=>{console.error(err);res.status(500).json({error:'Error interno del servidor.'});});
-app.listen(port,()=>console.log(`TX LA FIRME API escuchando en ${port}`));
+initDb()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`TX LA FIRME API escuchando en ${port}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Error al preparar la base de datos:', err);
+    process.exit(1);
+  });
