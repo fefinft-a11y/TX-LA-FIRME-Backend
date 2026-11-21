@@ -27,7 +27,12 @@ const admin = (req,res,next) => req.user?.role === 'admin' ? next() : res.status
 
 app.get('/api/v1/health', (req,res) => res.json({ ok:true, service:'TX LA FIRME API', time:new Date().toISOString() }));
 
-app.post('/api/v1/auth/register', asyncRoute(async (req,res) => {
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'TX LA FIRME Backend'
+  });
+}); app.post('/api/v1/auth/register', asyncRoute(async (req,res) => {
   const { name, email, password, phone } = req.body;
   if (!name || !email || !password || password.length < 8) return res.status(400).json({error:'Nombre, correo y contraseña de al menos 8 caracteres son obligatorios.'});
   const hash = await bcrypt.hash(password, 12);
