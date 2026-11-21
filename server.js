@@ -66,7 +66,9 @@ app.post('/api/v1/bookings',auth,asyncRoute(async(req,res)=>{
  try{await client.query('BEGIN');const tq=await client.query('SELECT * FROM trips WHERE id=$1 AND status=$2 FOR UPDATE',[tripId,'open']);if(!tq.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Viaje no disponible.'});}
  const trip=tq.rows[0]; if(trip.modality==='exclusive' && n!==trip.total_seats){await client.query('ROLLBACK');return res.status(400).json({error:'El viaje exclusivo requiere contratar todo el vehículo.'});}
  if(trip.available_seats<n){await client.query('ROLLBACK');return res.status(409).json({error:'No hay suficientes asientos disponibles.'});}
- const total=Number(trip.price_per_seat)*n; const b=await client.query('INSERT INTO bookings(user_id,trip_id,seats,total_amount,status) VALUES($1,$2,$3,$4,$5) RETURNING id,trip_id,seats,total_amount,status',[req.user.id,tripId,n,total,'pending']);
+ const total = trip.modality === 'exclusive'
+  ? Number(trip.price_per_seat)
+  : Number(trip.price_per_seat) * n; const b=await client.query('INSERT INTO bookings(user_id,trip_id,seats,total_amount,status) VALUES($1,$2,$3,$4,$5) RETURNING id,trip_id,seats,total_amount,status',[req.user.id,tripId,n,total,'pending']);
  await client.query('UPDATE trips SET available_seats=available_seats-$1 WHERE id=$2',[n,tripId]);await client.query('COMMIT');res.status(201).json({booking:b.rows[0]});
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 }));
