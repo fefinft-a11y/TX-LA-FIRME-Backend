@@ -34,6 +34,44 @@ const auth = (req,res,next) => {
 };
 const admin = (req,res,next) => req.user?.role === 'admin' ? next() : res.status(403).json({error:'Acceso solo para administración.'});
 
+const verifyAdminPassword = async (req, res, next) => {
+  const { adminPassword } = req.body || {};
+
+  if (!adminPassword) {
+    return res.status(400).json({
+      error: 'Debes confirmar tu contraseña de administrador.'
+    });
+  }
+
+  try {
+    const q = await pool.query(
+      'SELECT password_hash FROM users WHERE id=$1 AND role=$2 AND active=true',
+      [req.user.id, 'admin']
+    );
+
+    if (!q.rowCount) {
+      return res.status(403).json({
+        error: 'Administrador no autorizado.'
+      });
+    }
+
+    const valid = await bcrypt.compare(
+      adminPassword,
+      q.rows[0].password_hash
+    );
+
+    if (!valid) {
+      return res.status(401).json({
+        error: 'La contraseña de administrador es incorrecta.'
+      });
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 app.get('/api/v1/health', (req,res) => res.json({ ok:true, service:'TX LA FIRME API', time:new Date().toISOString() }));
 
 app.get('/health', (req, res) => {
