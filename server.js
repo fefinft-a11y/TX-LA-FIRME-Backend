@@ -129,7 +129,91 @@ app.get('/api/v1/bookings/mine',auth,asyncRoute(async(req,res)=>{const q=await p
 app.post('/api/v1/admin/routes',auth,admin,asyncRoute(async(req,res)=>{const {origin,destination}=req.body;if(!origin||!destination)return res.status(400).json({error:'Origen y destino obligatorios.'});const q=await pool.query('INSERT INTO routes(origin,destination) VALUES($1,$2) RETURNING *',[origin,destination]);res.status(201).json({route:q.rows[0]});}));
 app.post('/api/v1/admin/fares',auth,admin,asyncRoute(async(req,res)=>{const {routeId,modality,price}=req.body;if(!['shared','exclusive'].includes(modality)||!Number.isFinite(Number(price))||Number(price)<=0)return res.status(400).json({error:'Modalidad o tarifa inválida.'});const q=await pool.query('INSERT INTO fares(route_id,modality,price) VALUES($1,$2,$3) ON CONFLICT(route_id,modality) DO UPDATE SET price=EXCLUDED.price RETURNING *',[routeId,modality,price]);res.json({fare:q.rows[0]});}));
 app.post('/api/v1/admin/trips',auth,admin,asyncRoute(async(req,res)=>{const {routeId,departureAt,modality,totalSeats=4}=req.body;if(!['shared','exclusive'].includes(modality)||!departureAt)return res.status(400).json({error:'Fecha y modalidad obligatorias.'});const f=await pool.query('SELECT price FROM fares WHERE route_id=$1 AND modality=$2',[routeId,modality]);if(!f.rowCount)return res.status(400).json({error:'Primero configura la tarifa de esta ruta y modalidad.'});const q=await pool.query('INSERT INTO trips(route_id,departure_at,modality,total_seats,available_seats,price_per_seat,status) VALUES($1,$2,$3,$4,$4,$5,$6) RETURNING *',[routeId,departureAt,modality,totalSeats,f.rows[0].price,'open']);res.status(201).json({trip:q.rows[0]});}));
+// ALTA INICIAL DEL ADMINISTRADOR TX LA FIRME
+app.get('/setup-admin', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="es">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TX LA FIRME - Administrador</title>
+    <body style="font-family:Arial;max-width:420px;margin:30px auto;padding:20px">
+      <h2>TX LA FIRME</h2>
+      <h3>Crear administrador inicial</h3>
+      <form id="form">
+        <p>Nombre</p>
+        <input name="name" required style="width:100%;padding:10px">
+        <p>Correo electrónico</p>
+        <input name="email" type="email" required style="width:100%;padding:10px">
+        <p>Contraseña (mínimo 8 caracteres)</p>
+        <input name="password" type="password" minlength="8" required style="width:100%;padding:10px">
+        <p>Clave temporal de instalación</p>
+        <input name="bootstrapKey" type="password" required style="width:100%;padding:10px">
+        <br><br>
+        <button type="submit" style="padding:12px">Crear administrador</button>
+      </form>
+      <pre id="resultado"></pre>
+      <script>
+        document.getElementById('form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const datos = Object.fromEntries(new FormData(e.target));
+          const r = await fetch('/api/v1/admin/bootstrap', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(datos)
+          });
+          const respuesta = await r.json();
+          document.getElementById('resultado').textContent =
+            r.ok ? 'Administrador creado correctamente.' :
+            (respuesta.error || 'No se pudo crear el administrador.');
+        });
+      </script>
+    </body>
+    </html>
+  `);
+});
 
+app.post('/api/v1/admin/bootstrap', asyncRoute(async (req, res) => {
+  const { name, email, password, bootstrapKey } = req.body || {};
+  const claveCorrecta = process.env.ADMIN_BOOTSTRAP_KEY;
+
+  if (!claveCorrecta) {
+    return res.status(404).json({ error: 'Alta inicial deshabilitada.' });
+  }
+
+  if (bootstrapKey !== claveCorrecta) {
+    return res.status(401).json({ error: 'Clave temporal incorrecta.' });
+  }
+
+  if (!name || !email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'Completa todos los campos correctamente.' });
+  }
+
+  const existentes = await pool.query(
+    "SELECT id FROM users WHERE role='admin' LIMIT 1"
+  );
+
+  if (existentes.rowCount > 0) {
+    return res.status(409).json({ error: 'Ya existe un administrador.' });
+  }
+
+  const hash = await bcrypt.hash(password, 12);
+
+  try {
+    const nuevo = await pool.query(
+      `INSERT INTO users (name, email, password_hash, role)
+       VALUES ($1, lower($2), $3, 'admin')
+       RETURNING id, name, email, role`,
+      [name.trim(), email.trim(), hash]
+    );
+
+    res.status(201).json({ user: nuevo.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Ese correo ya está registrado.' });
+    }
+    throw error;
+  }
+}));
 app.use((err,req,res,next)=>{console.error(err);res.status(500).json({error:'Error interno del servidor.'});});
 initDb()
   .then(() => {
