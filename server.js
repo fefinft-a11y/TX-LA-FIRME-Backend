@@ -131,6 +131,7 @@ app.post('/api/v1/admin/fares',auth,admin,asyncRoute(async(req,res)=>{const {rou
 app.post('/api/v1/admin/trips',auth,admin,asyncRoute(async(req,res)=>{const {routeId,departureAt,modality,totalSeats=4}=req.body;if(!['shared','exclusive'].includes(modality)||!departureAt)return res.status(400).json({error:'Fecha y modalidad obligatorias.'});const f=await pool.query('SELECT price FROM fares WHERE route_id=$1 AND modality=$2',[routeId,modality]);if(!f.rowCount)return res.status(400).json({error:'Primero configura la tarifa de esta ruta y modalidad.'});const q=await pool.query('INSERT INTO trips(route_id,departure_at,modality,total_seats,available_seats,price_per_seat,status) VALUES($1,$2,$3,$4,$4,$5,$6) RETURNING *',[routeId,departureAt,modality,totalSeats,f.rows[0].price,'open']);res.status(201).json({trip:q.rows[0]});}));
 // ALTA INICIAL DEL ADMINISTRADOR TX LA FIRME
 app.get('/setup-admin', (req, res) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'");
   res.send(`
     <!DOCTYPE html>
     <html lang="es">
