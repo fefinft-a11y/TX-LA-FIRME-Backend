@@ -153,20 +153,45 @@ app.get('/setup-admin', (req, res) => {
       </form>
       <pre id="resultado"></pre>
       <script>
-        document.getElementById('form').addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const datos = Object.fromEntries(new FormData(e.target));
-          const r = await fetch('/api/v1/admin/bootstrap', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(datos)
-          });
-          const respuesta = await r.json();
-          document.getElementById('resultado').textContent =
-            r.ok ? 'Administrador creado correctamente.' :
-            (respuesta.error || 'No se pudo crear el administrador.');
-        });
-      </script>
+  const formulario = document.getElementById('form');
+  const resultado = document.getElementById('resultado');
+  const boton = formulario.querySelector('button[type="submit"]');
+
+  formulario.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    resultado.textContent = 'Enviando solicitud...';
+    boton.disabled = true;
+
+    try {
+      const datos = Object.fromEntries(new FormData(formulario));
+      const respuesta = await fetch('/api/v1/admin/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+
+      const texto = await respuesta.text();
+      let respuestaServidor = {};
+
+      try {
+        respuestaServidor = texto ? JSON.parse(texto) : {};
+      } catch {
+        respuestaServidor.error = 'Respuesta no válida del servidor.';
+      }
+
+      if (respuesta.ok) {
+        resultado.textContent = 'Administrador creado correctamente. Ya puedes iniciar sesión.';
+        formulario.reset();
+      } else {
+        resultado.textContent = respuestaServidor.error || 'Error del servidor. Código: ' + respuesta.status;
+      }
+    } catch (error) {
+      resultado.textContent = 'Error de conexión: ' + error.message;
+    } finally {
+      boton.disabled = false;
+    }
+  });
+</script>
     </body>
     </html>
   `);
